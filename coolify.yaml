@@ -1,0 +1,58 @@
+# Coolify Stack Configuration for Flagsmith
+# This file can be used to import Flagsmith as a Stack in Coolify.
+# Save this as coolify.yaml or copy the content into a New Service > Docker Compose in Coolify.
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-flagsmith}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-flagsmith}
+    volumes:
+      - flagsmith_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  flagsmith:
+    image: docker.flagsmith.com/flagsmith/flagsmith:latest
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flagsmith}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-flagsmith}
+      USE_POSTGRES_FOR_ANALYTICS: 'true'
+      ENVIRONMENT: production
+      DJANGO_ALLOWED_HOSTS: '*' 
+      FLAGSMITH_DOMAIN: ${SERVICE_FQDN_FLAGSMITH:-localhost:8000}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-secret}
+      TASK_RUN_METHOD: TASK_PROCESSOR
+      PROMETHEUS_ENABLED: 'true'
+    ports:
+      - "${FLAGSMITH_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "coolify.managed=true"
+
+  flagsmith-task-processor:
+    image: docker.flagsmith.com/flagsmith/flagsmith:latest
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flagsmith}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-flagsmith}
+      USE_POSTGRES_FOR_ANALYTICS: 'true'
+      DJANGO_ALLOWED_HOSTS: '*'
+      PROMETHEUS_ENABLED: 'true'
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-secret}
+    ports:
+      - "${TASK_PROCESSOR_PORT:-8001}:8000"
+    depends_on:
+      - flagsmith
+    command: run-task-processor
+    labels:
+      - "coolify.managed=true"
+
+volumes:
+  flagsmith_pgdata:
